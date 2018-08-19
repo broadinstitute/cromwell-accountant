@@ -7,6 +7,7 @@ import requests
 import sys
 
 PRICELIST = 'http://cloudpricingcalculator.appspot.com/static/data/pricelist.json'
+MONTH_HOURS = 730
 
 def get_pricelist():
     response = requests.get(PRICELIST)
@@ -38,7 +39,7 @@ def get_disk_hour(call, pricelist):
       price_key += 'LOCAL-SSD'
       if preemptible:
         price_key += '-PREEMPTIBLE'
-  return pricelist[price_key][region] * int(disk_size)
+  return pricelist[price_key][region] * int(disk_size) / MONTH_HOURS
 
 def get_datetime(dt):
   return datetime.strptime(dt, '%Y-%m-%dT%X.%fZ')
