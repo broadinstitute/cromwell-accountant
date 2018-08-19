@@ -14,15 +14,31 @@ def get_pricelist():
     return response.json()['gcp_price_list']
 
 def get_machine_info(call):
-  zone, machine_type = call['jes']['machineType'].split('/')
+  jes = call['jes']
+  zone = jes['zone']
   region = zone[:-2]
+  machine_type = jes['machineType']
+  if machine_type.startswith(zone):
+    machine_type = machine_type.split('/')[1]
   return region, machine_type, call['preemptible']
 
+def get_price_key(key, preemptible):
+  return key + ('-PREEMPTIBLE' if preemptible else '')
+
 def get_machine_hour(pricelist, region, machine_type, preemptible = False):
-  price_key = 'CP-COMPUTEENGINE-VMIMAGE-' + machine_type.upper()
-  if preemptible:
-    price_key += '-PREEMPTIBLE'
-  return pricelist[price_key][region]
+  price = 0
+  if machine_type.startswith('custom'):
+    _, core, memory = machine_type.split('-')
+    core_key = get_price_key('CP-COMPUTEENGINE-CUSTOM-VM-CORE', preemptible)
+    price += pricelist[core_key][region] * int(core)
+    memory_key = get_price_key('CP-COMPUTEENGINE-CUSTOM-VM-RAM', preemptible)
+    price += pricelist[memory_key][region] * ceil(int(memory) * 0.001)
+  else:
+    price_key = get_price_key(
+      'CP-COMPUTEENGINE-VMIMAGE-' + machine_type.upper(), preemptible
+    )
+    price += pricelist[price_key][region] * memory * 0.001
+  return price
 
 def get_disk_hour(call, pricelist):
   region, _, preemptible = get_machine_info(call)
@@ -55,7 +71,7 @@ def get_price(metadata, pricelist):
   price = 0
   for calls in metadata['calls'].values():
     for call in calls:
-      if 'jes' in call:
+      if 'jes' in call and 'zone' in call['jes'] and 'machineType' in call['jes']:
         machine_hour = get_machine_hour(pricelist, *get_machine_info(call))
         disk_hour = get_disk_hour(call, pricelist)
         hours = get_hours(call)
