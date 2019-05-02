@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
-from datetime import datetime
+from datetime import datetime, timezone
+import dateutil.parser
 import json
 from math import ceil
 import requests
@@ -49,7 +50,7 @@ def get_disk_hour(call, pricelist):
     if disk_type == 'HDD':
       price_key += 'STORAGE-PD-CAPACITY'
     elif disk_type == 'SSD':
-      price_key += 'STORAGE-PD'
+      price_key += 'STORAGE-PD-SSD'
     elif disk_type == 'LOCAL':
       disk_size = '375'
       price_key += 'LOCAL-SSD'
@@ -58,17 +59,19 @@ def get_disk_hour(call, pricelist):
   return pricelist[price_key][region] * int(disk_size) / MONTH_HOURS
 
 def get_datetime(dt):
-  return datetime.strptime(dt, '%Y-%m-%dT%X.%fZ')
+  return dateutil.parser.parse(dt)
 
 def get_hours(call):
   start_time = get_datetime(call['start'])
-  end_time = get_datetime(call['end']) if 'end' in call else datetime.now()
+  if 'end' in call:
+      end_time = get_datetime(call['end'])
+  else:
+      end_time = datetime.now(timezone.utc)
   delta = end_time - start_time
   seconds = delta.days * 24 * 3600 + delta.seconds
   return max(seconds, 60) / 3600.0
 
-def get_price(metadata, pricelist):
-  price = 0
+def get_price(metadata, pricelist, price=0):
   for calls in metadata['calls'].values():
     for call in calls:
       if 'jes' in call and 'zone' in call['jes'] and 'machineType' in call['jes']:
@@ -76,12 +79,14 @@ def get_price(metadata, pricelist):
         disk_hour = get_disk_hour(call, pricelist)
         hours = get_hours(call)
         price += (machine_hour + disk_hour) * hours
+      if "subWorkflowMetadata" in call:
+        price += get_price(call["subWorkflowMetadata"], pricelist, price)
   return ceil(price * 100) / 100.0
 
 def main():
   metadata = json.loads(sys.stdin.read())
   pricelist = get_pricelist()
-  price = get_price(metadata, pricelist)
+  price = get_price(metadata, pricelist, price=0)
   print('$%.2f' % price)
 
 if __name__ == '__main__':
